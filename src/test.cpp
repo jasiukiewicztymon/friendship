@@ -105,7 +105,6 @@ public:
     ~int16() {
         // returning the value to the owner
         if (this->owner != nullptr) { this->owner->give_back(this); if (this->MUT_FLAG) { this->owner->value = this->value; } }
-        else if (this->value != nullptr && this->owner == nullptr) { delete this->value; }
 
         if (this->mut_borrower != nullptr) {
             this->mut_borrower->owner_error();
@@ -116,6 +115,7 @@ public:
             }
         }
 
+        if (this->value != nullptr && this->owner == nullptr) { delete this->value; }
         if (this->mut_borrower != nullptr || this->borrowers.size() > 0) { throw std::runtime_error("Fatal error, values becomed independent after owner destruction"); }
     }
 
