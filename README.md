@@ -9,6 +9,7 @@ It's an implementation of adapted **borrowing/ownershipping**. The goal is to re
 - multiple immutable borrows can occur (read-only)
 - the owner that made a mutable borrow loses even the right to read the value
 - a borrow from an immutable borrow is the same as borrowing as immutable directly from the original owner
+- if an illegal borrow occurs it creates a new independent value instead and throws an error
 
 ## Errors
 
