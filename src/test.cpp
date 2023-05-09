@@ -2,136 +2,170 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <assert.h>
 
-class Int32 {
+#define i16(val, ...) int16(val, #__VA_ARGS__)
+
+class int16 {
 private: 
-    bool MUT_FLAG = false, REF_FLAG = false, VAL_FLAG = true;
+    bool MUT_FLAG = false, 
+         REF_FLAG = false;
 
-    int* mut_value = nullptr;
-    const int* value = nullptr;
+    short int* value = nullptr;
 
-    Int32* owner = nullptr;
-    Int32* mut_borrower = nullptr;
-    std::vector<Int32*> borrowers = {};
+    int16* owner = nullptr;
+    int16* mut_borrower = nullptr;
+
+    std::vector<int16*> borrowers = {};
 
     void set_flags(std::string flag) {
+        if (flag == "") return;
+
         if (flag == "mut&") { this->MUT_FLAG = true; this->REF_FLAG = true; }
         else if (flag == "mut") { this->MUT_FLAG = true; }
         else if (flag == "&") { this->REF_FLAG = true; }
         else { throw std::runtime_error("Fatal error, invalid flag"); }
     }
-    void give_back(Int32* borrower) {
+    void give_back(int16* borrower) {
+        if (this->mut_borrower == borrower) {
+            this->mut_borrower = nullptr;
+            return;
+        }
+
         auto it = std::find(this->borrowers.begin(), this->borrowers.end(), borrower);
+
         if (it != this->borrowers.end()) { this->borrowers.erase(it); }
         else { throw std::runtime_error("Fatal error, you cannot give back a value that wasn't borrowed"); }
     }
-    void parent_error() {
+
+    // becoming independent
+    void owner_error() {
+        this->value = this->owner->value;
         this->owner = nullptr;
-        this->value = nullptr;
-        throw std::runtime_error("Fatal error, parent has been removed");
     }
 public: 
+    bool is_mut() { return this->MUT_FLAG; }
+    bool is_ref() { return this->REF_FLAG; }
+
+    // default value
+    int16() { this->value = new short int(0); }
+
     // owner
-    Int32(int v, std::string flag) {
+    int16(short int v, std::string flag) {
         set_flags(flag);
+
+        this->value = new short int(v);
 
         if (this->REF_FLAG) {
             this->REF_FLAG = false;
-            throw std::runtime_error("Fatal error, int cannot be borrowed");
+            throw std::runtime_error("Fatal error, short int cannot be borrowed");
         }
-
-        if (this->MUT_FLAG) { this->mut_value = new int(v); }
-        else { this->value = new int(v); }
+    }
+    int16(short int v) {
+        this->value = new short int(v);
     }
     // borrowing
-    Int32(Int32* owner, std::string flag) {
+    int16(int16* owner, std::string flag) {
         set_flags(flag);
 
         if (owner == nullptr) {
-            this->VAL_FLAG = false;
+            this->REF_FLAG = false;
+            this->value = new short int(*owner->value);
             throw std::runtime_error("Fatal error, the owner does not exists");
         } else {
-            if (this->MUT_FLAG && this->REF_FLAG) { 
-                if (owner->MUT_FLAG) { this->mut_value = owner->mut_value; }
-                else { 
-                    this->MUT_FLAG = false;
-                    this->value = owner->value;
-                    throw std::runtime_error("Fatal error, borrowing immutable value into mutable one");
+            if (this->REF_FLAG) {
+                if (owner->mut_borrower != nullptr) { this->REF_FLAG = false; this->value = new short int(*owner->value); throw std::runtime_error("Fatal error, the owner has already a mutable borrow so the value become independent"); }
+                else {
+                    if (!owner->MUT_FLAG && this->MUT_FLAG) { this->MUT_FLAG = false; this->owner = owner; this->value = owner->value; owner->borrowers.push_back(this); throw std::runtime_error("Fatal error, tring to borrow an immutable value as mutable, autocast to immutable"); } 
+                    else if (!this->MUT_FLAG) { this->owner = owner; this->value = owner->value; owner->borrowers.push_back(this); }
+                    else {
+                        this->owner = owner;
+                        this->value = owner->value;
+                        owner->mut_borrower = this;
+                        if (this->MUT_FLAG) {
+                            owner->value = nullptr;
+                        }
+                    }
                 }
             }
-            else if (this->REF_FLAG) {
-                if (owner->MUT_FLAG) { this->value = owner->mut_value; }
-                else { this->value = owner->value; }
-            }
-            else if (this->MUT_FLAG) { 
-                if (owner->MUT_FLAG) { this->mut_value = new int(*owner->mut_value); }
-                else { this->mut_value = new int(*owner->value); }
-            } 
             else {
-                if (owner->MUT_FLAG) { this->value = new int(*owner->mut_value); }
-                else { this->value = new int(*owner->value); }
-            }
-
-            if (this->MUT_FLAG && this->REF_FLAG) { this->owner->value = nullptr; }
-
-            if (this->REF_FLAG) {
-                this->owner = owner;
-                owner->borrowers.push_back(this);
+                this->value = new short int(*owner->value);
             }
         }
     }
 
-    int operator()()
-    {
-        if (this->MUT_FLAG) { if (this->mut_value == nullptr) return 0; return *this->mut_value; }
-        else { if (this->value == nullptr) return 0; return *this->value; }
+    int operator()() { if (this->mut_borrower != nullptr) { throw std::runtime_error("Fatal error, the value has been borrowed as mutable"); } return *this->value; }
+    void operator=(int a) {
+        if (this->mut_borrower != nullptr || this->borrowers.size() > 0) { { throw std::runtime_error("Fatal error, tring to set a borrowed value"); } }
+        if (!this->MUT_FLAG) { { throw std::runtime_error("Fatal error, tring to set a immutable value"); } }
+        *this->value = a;
     }
 
     // destructor
-    ~Int32() {
+    ~int16() {
         // returning the value to the owner
-        if (this->owner != nullptr) { this->owner->give_back(this); if (this->MUT_FLAG) { this->owner->mut_value = this->mut_value; } }
+        if (this->owner != nullptr) { this->owner->give_back(this); if (this->MUT_FLAG) { this->owner->value = this->value; } }
+        else if (this->value != nullptr && this->owner == nullptr) { delete this->value; }
+
         if (this->mut_borrower != nullptr) {
-            this->mut_borrower->parent_error();
+            this->mut_borrower->owner_error();
         }
         else if (this->borrowers.size() > 0) {
             for (auto b : this->borrowers) {
-                b->parent_error();
+                b->owner_error();
             }
         }
+
+        if (this->mut_borrower != nullptr || this->borrowers.size() > 0) { throw std::runtime_error("Fatal error, values becomed independent after owner destruction"); }
     }
 
     // borrowing functions
-    Int32 borrow() {
-        if (this->mut_borrower == nullptr) { return Int32(this, "&"); }
-        else { 
-            throw std::runtime_error("Fatal error, a mutable borrow already occure");
-            return Int32(nullptr, "&");
-        }
+    int16 borrow() {
+        if (this->mut_borrower == nullptr) { return int16(this, "&"); }
+        throw std::runtime_error("Fatal error, a mutable borrow already occure");
     }
-    Int32 borrow_mut() {
-        if (this->mut_borrower == nullptr && this->borrowers.size() == 0) { return Int32(this, "mut&"); }
-        else {
-            throw std::runtime_error("Fatal error, a borrow already occure");
-            return Int32(nullptr, "mut&");
-        }
+    int16 borrow_mut() {
+        if (!this->MUT_FLAG) { throw std::runtime_error("Fatal error, tring to borrow an immutable value as mutable"); }
+        if (this->mut_borrower == nullptr && this->borrowers.size() == 0) { return int16(this, "mut&"); }
+        throw std::runtime_error("Fatal error, a borrow already occure");
     }
 
-    // overloading operators
-
-    friend class Int32;
+    friend class int16;
 };
 
-int main() {
-    Int32 A = Int32(3, "mut");
-    {
-        
-    Int32 B = A.borrow();
-    Int32 C = A.borrow();
+void i16_test() {
+    try {
+        int16 a = i16(5);
+        assert(a() == 5);
+    } catch (std::runtime_error err) { std::cout << err.what(); }
+    try {
+        int16 a = i16(5, mut);
+        a = 15;
+        assert(a() == 15);
+    } catch (std::runtime_error err) { std::cout << err.what(); }
+    try {
+        int16 a = i16(5, mut);
+        a = 15;
+        {
+            int16 b = a.borrow();
+            assert(b() == 15);
+        }
+        assert(a() == 15);
+    } catch (std::runtime_error err) { std::cout << err.what(); }
+    try {
+        int16 a = i16(5, mut);
+        a = 15;
+        {
+            int16 b = a.borrow_mut();
+            b = 25;
+            assert(b() == 25);
+        }
+        assert(a() == 25);
+    } catch (std::runtime_error err) { std::cout << err.what(); }
+}
 
-    std::cout << B();
-    }
-    std::cout << "ok";
+int main() {
+    i16_test();
 
     return 0;
 }
